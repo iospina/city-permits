@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/sync-permits",
+      "schedule": "0 8 * * *"
+    }
+  ],
+  "functions": {
+    "api/cron/sync-permits.ts": {
+      "maxDuration": 300
+    }
+  }
+}

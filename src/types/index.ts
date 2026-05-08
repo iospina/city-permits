@@ -52,7 +52,7 @@ export interface RawPermitRow {
   nta: string;
   bin: string;
   bbl: string;
-  house_number: string;
+  house_no: string;
   street_name: string;
   job_filing_number: string;
   job_doc_number: string;

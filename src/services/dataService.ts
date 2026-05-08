@@ -1,50 +1,31 @@
 // ---------------------------------------------------------------------------
 // dataService.ts
-// Fetches raw permit rows from the NYC Open Data API (dataset rbx6-tga4).
+// Fetches permit rows from the CUC-owned API endpoint.
+//
+// History: pre-Brooklyn-Mirage-launch this file fetched directly from the
+// NYC Open Data API (rbx6-tga4) from the browser, capped at 10 000 rows.
+// The May 2026 audit revealed that cap was silently dropping ~90% of active
+// permits citywide. The fix is structural: a server-side daily sync into a
+// CUC-owned Postgres database, with the client reading from a CUC endpoint.
+// See db/schema.sql, lib/sync.ts, and api/parcels.ts.
 // ---------------------------------------------------------------------------
 
 import type { RawPermitRow } from '../types';
 
-const API_BASE = 'https://data.cityofnewyork.us/resource/rbx6-tga4.json';
-
-// Socrata app token — removes rate limiting on the NYC Open Data API.
-const APP_TOKEN = import.meta.env.VITE_SOCRATA_APP_TOKEN as string | undefined;
+const PARCELS_ENDPOINT = '/api/parcels';
 
 /**
- * Fetch permit rows from NYC Open Data.
+ * Fetch every active permit row from the CUC API.
  *
- * Filters server-side to active permits only (permit_status = 'Permit Issued'
- * AND not yet expired) so the full row budget goes to genuinely live sites.
- * Results are ordered by issued_date DESC so the freshest permits surface
- * first if the dataset ever grows beyond the limit.
+ * "Active" matches CUC's product definition exactly:
+ *   permit_status = 'Permit Issued'
+ *   AND (expired_date IS NULL OR expired_date > today)
  *
- * @param limit  Maximum rows to fetch. Default 10 000 — covers active permits
- *               across all five boroughs with fast load times.
- * @param offset Optional offset for future pagination.
+ * The server enforces this filter during the daily sync, so the client
+ * receives only currently-active rows.
  */
-export async function fetchPermitRows(
-  limit = 10000,
-  offset = 0,
-): Promise<RawPermitRow[]> {
-  // Today's date in ISO format for the expiry boundary (server-side filter).
-  const today = new Date().toISOString().slice(0, 10);
-
-  // SoQL WHERE clause: active status + not yet expired.
-  const where =
-    `permit_status='Permit Issued' AND ` +
-    `(expired_date IS NULL OR expired_date > '${today}')`;
-
-  const url = new URL(API_BASE);
-  url.searchParams.set('$limit', String(limit));
-  url.searchParams.set('$offset', String(offset));
-  url.searchParams.set('$where', where);
-  url.searchParams.set('$order', 'issued_date DESC');
-
-  const headers: HeadersInit = APP_TOKEN
-    ? { 'X-App-Token': APP_TOKEN }
-    : {};
-
-  const response = await fetch(url.toString(), { headers });
+export async function fetchPermitRows(): Promise<RawPermitRow[]> {
+  const response = await fetch(PARCELS_ENDPOINT);
 
   if (!response.ok) {
     throw new Error(

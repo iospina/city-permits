@@ -31,7 +31,7 @@ function safeString(val: string | undefined): string {
  * Build a display address from house number + street name.
  */
 function buildDisplayAddress(row: RawPermitRow): string {
-  const house = safeString(row.house_number).trim();
+  const house = safeString(row.house_no).trim();
   const street = safeString(row.street_name).trim();
   if (house && street) return `${house} ${street}`;
   if (street) return street;
