@@ -129,6 +129,16 @@ export function groupRowsIntoParcels(rows: RawPermitRow[]): Parcel[] {
     const lat = toNumber(representative.latitude);
     const lng = toNumber(representative.longitude);
 
+    // Collect every distinct sub-address seen at this BBL. Parcels can have
+    // multiple — Brooklyn Mirage's BBL spans three doors. Search matching
+    // uses this set so a search for "140 Stewart" still hits the parcel
+    // whose representative row happens to be "144 Stewart" or "528 Meserole".
+    const subAddrs = new Set<string>();
+    for (const r of groupRows) {
+      const addr = buildDisplayAddress(r);
+      if (addr && addr !== 'Unknown address') subAddrs.add(addr);
+    }
+
     parcels.push({
       parcelId: bbl, // BBL is the unique parcel identifier
       bbl,
@@ -144,6 +154,7 @@ export function groupRowsIntoParcels(rows: RawPermitRow[]): Parcel[] {
       activePermits: active,
       permitHistory: history,
       latestPermitSummary: deriveLatestPermitSummary(active),
+      subAddresses: [...subAddrs],
     });
   }
 

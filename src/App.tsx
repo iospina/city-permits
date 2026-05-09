@@ -4,15 +4,26 @@
 // map controls (bottom bar on mobile / floating elements on desktop).
 //
 // Search-to-parcel matching:
-//   Two-strategy approach so results aren't gated by a brittle single radius:
+//   Mapbox's geocoder routinely falls back to a street-level centroid when
+//   it doesn't have a precise point for a NYC house number. A naive
+//   "closest parcel within 250m" then snaps onto whatever corner parcel
+//   happens to be near that centroid — which on dense Manhattan blocks is
+//   often a perpendicular-street neighbor with one unrelated permit, not
+//   the parcel the user was actually looking for.
 //
-//   Strategy A — coordinate proximity on all parcels with valid coords,
-//                using 250m radius (relaxed from 100m).
-//   Strategy B — normalised address text matching on ALL parcels (including
-//                those without stored coordinates), Jaccard token similarity.
+//   Instead we score every parcel on BOTH coord proximity AND token-level
+//   address similarity (against every sub-address at the BBL, not just the
+//   representative `displayAddress`), then pick from a tiered preference:
 //
-//   If neither strategy yields a confident match, the map centers on the
-//   geocoded location without opening the sheet.
+//     Tier 1: within 100m AND Jaccard >= 0.55 — best world
+//     Tier 2: within 250m AND Jaccard >= 0.55 — slightly looser
+//     Tier 3: Jaccard >= 0.55, distance ignored — text-only fallback
+//             (handles parcels with no stored coords)
+//     Tier 4: closest within 100m, no text requirement — last resort
+//
+//   Inside each tier, higher Jaccard wins; ties broken by closer distance.
+//   If no tier yields a candidate the map centers on the geocoded point
+//   without opening the sheet.
 // ---------------------------------------------------------------------------
 
 import { useState, useCallback, useRef } from 'react';
@@ -46,8 +57,12 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Max distance (m) for coordinate-based match. Relaxed to 250m. */
-const COORD_MATCH_RADIUS_M = 250;
+/** Tier 1 radius — tight, used to prefer same-block matches over neighbors. */
+const COORD_TIGHT_RADIUS_M = 100;
+
+/** Tier 2 / Tier 4 radius — loose. Mapbox's street centroid can land
+ * 150–200m from the actual lot in dense neighborhoods. */
+const COORD_LOOSE_RADIUS_M = 250;
 
 /** Minimum Jaccard score to accept an address-text match. */
 const ADDRESS_MATCH_THRESHOLD = 0.55;
@@ -86,10 +101,88 @@ function jaccardScore(a: string, b: string): number {
 }
 
 /**
- * Find the best matching Parcel for a Mapbox geocoding suggestion.
+ * Strip a leading house number from a normalized address. House numbers
+ * are positive evidence at most, never negative — a search for "124 White
+ * Street" should not penalize a parcel whose sub-addresses are "120/125
+ * WHITE STREET". Stripping makes Jaccard score street-name match alone;
+ * house-number proximity (below) and geo distance break ties.
  *
- * Strategy A: coordinate proximity on parcels that have stored coords.
- * Strategy B: normalised address text match on ALL parcels (fallback).
+ * Examples:
+ *   "124 white st"     -> "white st"
+ *   "100 east 42 st"   -> "east 42 st"   (cross-street numbers preserved)
+ *   "white st"         -> "white st"
+ */
+function stripLeadingHouseNumber(normalizedAddr: string): string {
+  return normalizedAddr.replace(/^\d+\s+/, '').trim();
+}
+
+/** Extract a leading integer from a normalized address, or null if none. */
+function leadingHouseNumber(normalizedAddr: string): number | null {
+  const m = normalizedAddr.match(/^(\d+)\s/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Best (minimum) house-number distance between the search and any of the
+ * parcel's sub-addresses. Used as a tiebreaker after street-name Jaccard:
+ * a search for "124 White" should prefer a parcel containing "120 / 125
+ * White" over one containing "112 White" (numeric distance 1 vs 12), even
+ * when both score 1.0 on Jaccard.
+ *
+ * Returns Infinity when either side has no extractable leading number,
+ * effectively making this tiebreaker a no-op for those rows.
+ */
+function bestHouseNumberDistance(
+  suggestionStreet: string,
+  parcel: Parcel,
+): number {
+  const searchNum = leadingHouseNumber(suggestionStreet);
+  if (searchNum == null) return Infinity;
+
+  const candidates =
+    parcel.subAddresses && parcel.subAddresses.length > 0
+      ? parcel.subAddresses
+      : [parcel.displayAddress];
+
+  let best = Infinity;
+  for (const sub of candidates) {
+    const subNum = leadingHouseNumber(normalizeAddress(sub));
+    if (subNum == null) continue;
+    const d = Math.abs(searchNum - subNum);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * Best Jaccard score between the search string and any sub-address at the
+ * parcel, comparing only the street-name portion (leading house numbers
+ * stripped from both sides). Falls back to `displayAddress` when
+ * `subAddresses` is empty.
+ */
+function bestParcelJaccard(
+  suggestionStreet: string,
+  parcel: Parcel,
+): number {
+  const candidates =
+    parcel.subAddresses && parcel.subAddresses.length > 0
+      ? parcel.subAddresses
+      : [parcel.displayAddress];
+
+  const searchStreetOnly = stripLeadingHouseNumber(suggestionStreet);
+
+  let best = 0;
+  for (const sub of candidates) {
+    const subStreetOnly = stripLeadingHouseNumber(normalizeAddress(sub));
+    const score = jaccardScore(searchStreetOnly, subStreetOnly);
+    if (score > best) best = score;
+  }
+  return best;
+}
+
+/**
+ * Find the best matching Parcel for a Mapbox geocoding suggestion using a
+ * tiered preference (see file header for the spec).
  */
 function findMatchingParcel(
   suggestion: SearchSuggestion,
@@ -97,43 +190,68 @@ function findMatchingParcel(
 ): Parcel | null {
   const [lng, lat] = suggestion.center;
 
-  // --- Strategy A: coordinate proximity -----------------------------------
-  let closestByCoord: Parcel | null = null;
-  let closestDist = Infinity;
+  // First comma-delimited segment of the Mapbox place_name — e.g.
+  // "39 Broadway" out of "39 Broadway, Manhattan, New York, NY 10006".
+  const suggestionStreet = normalizeAddress(
+    suggestion.placeName.split(',')[0],
+  );
 
-  for (const p of allParcels) {
-    if (p.latitude === 0 && p.longitude === 0) continue;
-    const d = haversineMetres(lat, lng, p.latitude, p.longitude);
-    if (d < closestDist) {
-      closestDist = d;
-      closestByCoord = p;
-    }
+  interface Scored {
+    parcel: Parcel;
+    distance: number;
+    jaccard: number;
+    houseDist: number;
   }
 
-  if (closestByCoord && closestDist <= COORD_MATCH_RADIUS_M) {
-    return closestByCoord;
-  }
+  // Score every candidate once.
+  const scored: Scored[] = allParcels.map((p) => {
+    const hasCoords = p.latitude !== 0 || p.longitude !== 0;
+    const distance = hasCoords
+      ? haversineMetres(lat, lng, p.latitude, p.longitude)
+      : Infinity;
+    const jaccard = bestParcelJaccard(suggestionStreet, p);
+    const houseDist = bestHouseNumberDistance(suggestionStreet, p);
+    return { parcel: p, distance, jaccard, houseDist };
+  });
 
-  // --- Strategy B: normalised address text match --------------------------
-  // Use the first comma-delimited segment of the Mapbox place_name
-  // (e.g. "39 Broadway" from "39 Broadway, Manhattan, New York, NY 10006 …")
-  const suggestionStreet = normalizeAddress(suggestion.placeName.split(',')[0]);
+  // Higher Jaccard wins; closer house number is the next tiebreaker;
+  // closer geo distance is the final tiebreaker.
+  const orderByQuality = (a: Scored, b: Scored): number =>
+    b.jaccard - a.jaccard ||
+    a.houseDist - b.houseDist ||
+    a.distance - b.distance;
 
-  let bestAddressMatch: Parcel | null = null;
-  let bestScore = 0;
+  // Tier 1: tight radius AND meaningful text match.
+  const tier1 = scored
+    .filter(
+      (s) =>
+        s.distance <= COORD_TIGHT_RADIUS_M &&
+        s.jaccard >= ADDRESS_MATCH_THRESHOLD,
+    )
+    .sort(orderByQuality);
+  if (tier1.length > 0) return tier1[0].parcel;
 
-  for (const p of allParcels) {
-    const normParcel = normalizeAddress(p.displayAddress);
-    const score = jaccardScore(suggestionStreet, normParcel);
-    if (score > bestScore) {
-      bestScore = score;
-      bestAddressMatch = p;
-    }
-  }
+  // Tier 2: loose radius AND text match.
+  const tier2 = scored
+    .filter(
+      (s) =>
+        s.distance <= COORD_LOOSE_RADIUS_M &&
+        s.jaccard >= ADDRESS_MATCH_THRESHOLD,
+    )
+    .sort(orderByQuality);
+  if (tier2.length > 0) return tier2[0].parcel;
 
-  if (bestAddressMatch && bestScore >= ADDRESS_MATCH_THRESHOLD) {
-    return bestAddressMatch;
-  }
+  // Tier 3: text match alone (handles parcels without stored coords).
+  const tier3 = scored
+    .filter((s) => s.jaccard >= ADDRESS_MATCH_THRESHOLD)
+    .sort(orderByQuality);
+  if (tier3.length > 0) return tier3[0].parcel;
+
+  // Tier 4: closest within tight radius, no text requirement (last resort).
+  const tier4 = scored
+    .filter((s) => s.distance <= COORD_TIGHT_RADIUS_M)
+    .sort((a, b) => a.distance - b.distance);
+  if (tier4.length > 0) return tier4[0].parcel;
 
   return null;
 }

@@ -38,6 +38,15 @@ export interface Parcel {
   activePermits: Permit[];
   permitHistory: Permit[];
   latestPermitSummary: string | null;
+  /**
+   * All unique "house_no street_name" combinations seen across permit rows
+   * for this BBL. A single parcel can span multiple sub-addresses
+   * (e.g. BBL 3029770001 = 140 STEWART AVENUE, 144 STEWART AVENUE, and
+   * 528 MESEROLE STREET — three doors of the Brooklyn Mirage block).
+   * Used by search matching to compare against any sub-address, not just
+   * the representative `displayAddress`.
+   */
+  subAddresses: string[];
 }
 
 // ---------------------------------------------------------------------------
