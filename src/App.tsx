@@ -527,7 +527,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="cuc-app">
+    <div className={`cuc-app${selectedParcel ? ' cuc-app--sheet-open' : ''}`}>
       {/* Map — always behind everything */}
       <MapView
         parcels={mappableParcels}

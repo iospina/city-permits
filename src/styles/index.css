@@ -427,18 +427,24 @@ ul {
     pointer-events: none;
   }
 
-  /* Search container on desktop: fixed width, no self-positioning */
+  /* Search container on desktop: fixed width, anchor for absolute results */
   .cuc-search-row .cuc-search-container {
+    position: relative;
     width: 380px;
     max-width: 380px;
     flex: none;
   }
 
-  /* Search results: back to normal below-bar on desktop */
+  /* Search results: float below the bar as an overlay (NOT inline) so
+     the locate button next to the search bar doesn't shift down when
+     the dropdown opens. */
   .cuc-search-row .cuc-search-results {
-    position: static;
+    position: absolute;
+    top: calc(100% + 8px);
     bottom: auto;
-    margin-top: 8px;
+    left: 0;
+    right: 0;
+    margin-top: 0;
     animation: fadeSlideDown 200ms cubic-bezier(0, 0, 0.2, 1);
   }
 
@@ -776,6 +782,16 @@ ul {
   color: #404040;
   pointer-events: auto;
   user-select: none;
+  transition: bottom 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Desktop: float bottom-right next to Mapbox attribution so the parcel
+   sheet (which is left-anchored) doesn't overlap it. */
+@media (min-width: 768px) {
+  .cuc-attribution {
+    left: auto;
+    right: 124px; /* clear of the Mapbox "© Mapbox © OpenStreetMap …" block */
+  }
 }
 
 .cuc-attribution-link {
@@ -799,9 +815,18 @@ ul {
   opacity: 0.75;
 }
 
-/* Mobile-only: lift attribution above the bottom bar */
+/* Mobile-only: lift attribution above the bottom bar (tighter spacing
+   than before so the gap between attribution and search bar feels right). */
 @media (max-width: 767px) {
   .cuc-attribution {
-    bottom: calc(max(20px, env(safe-area-inset-bottom)) + 62px);
+    bottom: calc(max(20px, env(safe-area-inset-bottom)) + 52px);
+  }
+
+  /* When the parcel sheet is open, the sheet covers the bottom ~67% of
+     the viewport. Lift the attribution above the sheet's top edge with
+     the same kind of padding to the sheet that it has to the search bar
+     when the sheet is closed. */
+  .cuc-app--sheet-open .cuc-attribution {
+    bottom: calc(67vh + 8px);
   }
 }

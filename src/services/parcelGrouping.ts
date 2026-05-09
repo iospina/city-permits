@@ -50,6 +50,7 @@ function toPermit(row: RawPermitRow): Permit {
   );
 
   return {
+    workPermit: safeString(row.work_permit),
     trackingNumber: safeString(row.tracking_number),
     jobFilingNumber: safeString(row.job_filing_number),
     sequenceNumber: toNumber(row.sequence_number),
@@ -142,6 +143,7 @@ export function groupRowsIntoParcels(rows: RawPermitRow[]): Parcel[] {
     parcels.push({
       parcelId: bbl, // BBL is the unique parcel identifier
       bbl,
+      bin: safeString(representative.bin),
       displayAddress: buildDisplayAddress(representative),
       borough: safeString(representative.borough),
       nta: safeString(representative.nta),

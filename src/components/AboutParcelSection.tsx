@@ -27,6 +27,7 @@ export default function AboutParcelSection({ parcel }: AboutParcelSectionProps) 
 
   const fields = [
     { label: 'Borough Block Lot (BBL)', value: parcel.bbl },
+    { label: 'Building ID (BIN)', value: parcel.bin },
     { label: 'Census Tract', value: parcel.censusTract },
     { label: 'Community Board', value: parcel.communityBoard },
     { label: 'Council District', value: parcel.councilDistrict },

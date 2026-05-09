@@ -85,6 +85,10 @@ export default function PermitCard({ permit, expandable = false }: PermitCardPro
       {expandable && expanded && (
         <div className="cuc-permit-details">
           <div className="cuc-permit-field">
+            <span className="cuc-permit-label">Work Permit</span>
+            <span className="cuc-permit-value">{permit.workPermit || '—'}</span>
+          </div>
+          <div className="cuc-permit-field">
             <span className="cuc-permit-label">Approved</span>
             <span className="cuc-permit-value">{formatDate(permit.approvedDate)}</span>
           </div>

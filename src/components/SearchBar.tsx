@@ -76,10 +76,13 @@ export default function SearchBar({
       {suggestions.length > 0 && (
         <ul className="cuc-search-results">
           {suggestions.map((s) => {
-            // Split into primary (street name) and secondary (neighbourhood/city)
-            const primary = s.text;
+            // Primary: full first comma-segment of place_name. Mapbox's
+            // `text` field strips the house number ("Columbia Street"
+            // when the user typed "75 Columbia"); the first segment of
+            // place_name preserves it ("75 Columbia Street").
+            const primary = s.placeName.split(',')[0].trim() || s.text;
             const secondary = s.placeName
-              .replace(/^[^,]+,\s*/, '') // remove leading "39 Broadway, "
+              .replace(/^[^,]+,\s*/, '') // remove leading "75 Columbia Street, "
               .replace(/,?\s*United States$/, '') // strip trailing country
               .trim();
 

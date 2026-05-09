@@ -277,11 +277,18 @@ export default function ParcelDetailSheet({
             )}
           </div>
 
-          {/* Section 2: Permit History (collapsed by default) */}
-          <PermitHistorySection
-            permits={parcel.permitHistory}
-            parcelId={parcel.parcelId}
-          />
+          {/* Section 2: Permit History — only render when there's actual
+              history. Our /api/parcels endpoint returns only currently-
+              active permits today, so permitHistory is always empty and
+              this section was just rendering "No permit history available"
+              forever. Kept the component import in case we ever broaden
+              the data layer to include expired permits. */}
+          {parcel.permitHistory.length > 0 && (
+            <PermitHistorySection
+              permits={parcel.permitHistory}
+              parcelId={parcel.parcelId}
+            />
+          )}
 
           {/* Section 3: About this Parcel (collapsed by default) */}
           <AboutParcelSection parcel={parcel} />

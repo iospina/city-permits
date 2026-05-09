@@ -3,6 +3,9 @@
 // Matches the Build Data Schema exactly.
 // ---------------------------------------------------------------------------
 export interface Permit {
+  /** DOB's per-permit identifier (e.g. "B01365390-S1-ST"). Useful for
+   *  cross-referencing in DOB NOW directly. */
+  workPermit: string;
   trackingNumber: string;
   jobFilingNumber: string;
   sequenceNumber: number;
@@ -26,6 +29,9 @@ export interface Permit {
 export interface Parcel {
   parcelId: string;
   bbl: string;
+  /** Building Identification Number — DOB's per-building ID. Distinct
+   *  from BBL, which is per-tax-lot. */
+  bin: string;
   displayAddress: string;
   borough: string;
   nta: string;
