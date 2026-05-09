@@ -785,12 +785,15 @@ ul {
   transition: bottom 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Desktop: float bottom-right next to Mapbox attribution so the parcel
-   sheet (which is left-anchored) doesn't overlap it. */
+/* Desktop: float bottom-right, stacked ABOVE the Mapbox attribution row so
+   the parcel sheet (left-anchored) doesn't overlap it AND we never collide
+   with the Mapbox "© Mapbox © OpenStreetMap Improve this map" block, which
+   varies in width with locale, zoom, and the "Improve this map" link. */
 @media (min-width: 768px) {
   .cuc-attribution {
     left: auto;
-    right: 124px; /* clear of the Mapbox "© Mapbox © OpenStreetMap …" block */
+    right: 8px;
+    bottom: 32px; /* clears the ~22px Mapbox attribution row */
   }
 }
 
