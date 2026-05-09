@@ -34,7 +34,6 @@ import { useSearch } from './hooks/useSearch';
 import MapView from './components/MapView';
 import SearchBar from './components/SearchBar';
 import ParcelDetailSheet from './components/ParcelDetailSheet';
-import { track, AnalyticsEvents } from './services/analytics';
 import { lookupBblByLatLng } from './services/geosearch';
 
 // ---------------------------------------------------------------------------
@@ -439,10 +438,10 @@ export default function App() {
   }, []);
 
   // ---- Marker click --------------------------------------------------------
+  // ParcelDetailSheet's effect fires `parcel_detail_viewed` with the
+  // appropriate entry_source on every open, so we don't fire any
+  // analytics here directly.
   const handleMarkerClick = useCallback((parcel: Parcel) => {
-    track(AnalyticsEvents.PARCEL_SHEET_OPENED_FROM_MAP, {
-      parcelId: parcel.parcelId,
-    });
     setSelectedParcel(parcel);
     setSheetSource('map');
 
@@ -505,9 +504,7 @@ export default function App() {
           duration: 400,
         });
 
-        track(AnalyticsEvents.PARCEL_SHEET_OPENED_FROM_SEARCH, {
-          parcelId: matched.parcelId,
-        });
+        // parcel_detail_viewed is emitted by ParcelDetailSheet's effect.
         setSelectedParcel(matched);
         setSheetSource('search');
       } else {
