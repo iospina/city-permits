@@ -15,6 +15,7 @@
 
 import type { RawPermitRow, Permit, Parcel } from '../types';
 import { isPermitActive } from './permitStatus';
+import { findVenueAliasByBbl } from './venueAliases';
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -69,14 +70,59 @@ function toPermit(row: RawPermitRow): Permit {
 }
 
 /**
- * Pick the best row for populating parcel-level fields.
- * We prefer a row that has valid lat/lng, falling back to any row.
+ * Pick the representative row for parcel-level fields.
+ *
+ * Strategy:
+ *   1. Group rows by (house_no, street_name) and pick the plurality —
+ *      i.e. the house_no/street pair that DOB has filed the most permits
+ *      against at this BBL. Multi-door parcels (Brooklyn Mirage spans 140
+ *      / 144 / 528 Meserole; Pacific Park spans 13 doors) reliably file
+ *      the bulk of their permits at the primary address, so plurality
+ *      converges on something a human would recognize.
+ *   2. Within the plurality group, prefer a row with valid coordinates.
+ *      DOB occasionally emits empty lat/lng for individual permits even
+ *      when the BBL is geocoded; we pull coords from a sibling row.
+ *
+ * The previous picker — "first row with coords" — was arbitrary, since
+ * the API returns rows in no particular order. That landed Brooklyn
+ * Mirage on 144 Stewart instead of 140, Pacific Park on a Washington
+ * Walk address instead of 104 Carlton, etc.
  */
 function pickParcelRow(rows: RawPermitRow[]): RawPermitRow {
-  const withCoords = rows.find(
-    (r) => r.latitude && r.longitude && r.latitude !== '0' && r.longitude !== '0',
+  if (rows.length === 0) {
+    // Caller guards against this, but be defensive — TS would otherwise
+    // make us assert non-null below.
+    throw new Error('pickParcelRow called with empty rows array');
+  }
+
+  // 1. Tally house_no/street_name frequency.
+  const tally = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${safeString(r.house_no).trim()}\t${safeString(r.street_name).trim()}`;
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+
+  // Sorted descending by count. Tie-break alphabetically on the key so
+  // the result is stable across runs for parcels where two sub-addresses
+  // happen to file the same number of permits.
+  const ranked = [...tally.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return a[0].localeCompare(b[0]);
+  });
+  const [pluralityKey] = ranked[0];
+
+  // 2. Rows that match the plurality address. Prefer one with valid
+  //    coords; fall back to the first match.
+  const plurality = rows.filter((r) => {
+    const key = `${safeString(r.house_no).trim()}\t${safeString(r.street_name).trim()}`;
+    return key === pluralityKey;
+  });
+
+  const withCoords = plurality.find(
+    (r) =>
+      r.latitude && r.longitude && r.latitude !== '0' && r.longitude !== '0',
   );
-  return withCoords ?? rows[0];
+  return withCoords ?? plurality[0];
 }
 
 /**
@@ -140,11 +186,21 @@ export function groupRowsIntoParcels(rows: RawPermitRow[]): Parcel[] {
       if (addr && addr !== 'Unknown address') subAddrs.add(addr);
     }
 
+    // Alias-aware displayAddress: for BBLs in the curated venue-alias
+    // table (Brooklyn Mirage, Pacific Park, Chinatown jail) the hand-
+    // picked address from the alias entry takes precedence over whatever
+    // plurality picked. This guarantees those launch-arc parcels surface
+    // the address the user expects regardless of what DOB filed.
+    const alias = findVenueAliasByBbl(bbl);
+    const displayAddress = alias
+      ? alias.displayAddress
+      : buildDisplayAddress(representative);
+
     parcels.push({
       parcelId: bbl, // BBL is the unique parcel identifier
       bbl,
       bin: safeString(representative.bin),
-      displayAddress: buildDisplayAddress(representative),
+      displayAddress,
       borough: safeString(representative.borough),
       nta: safeString(representative.nta),
       censusTract: safeString(representative.census_tract),

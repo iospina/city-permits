@@ -92,18 +92,44 @@ export default async function handler(req: Request) {
 
   try {
     const sql = neon(process.env.DATABASE_URL!);
+    // Plurality picker: group rows by (house_no, street_name), pick the
+    // most-frequent pair, return one geocoded row from that group. Beats
+    // LIMIT 1 for multi-door BBLs (Brooklyn Mirage spans 140/144/528;
+    // Pacific Park spans 13 doors — DOB files most permits at the primary
+    // address, so MAX(COUNT(*)) lands on the recognizable one).
+    //
+    // Tie-break alphabetically on house_no/street_name for stability,
+    // then by row id for full determinism. Total permit count comes from
+    // a separate WHERE-clause-aware scalar.
     const rows = (await sql`
+      WITH bbl_permits AS (
+        SELECT house_no, street_name, borough, latitude, longitude
+        FROM permits
+        WHERE bbl = ${bbl}
+          AND latitude  ~ '^-?[0-9]+(\.[0-9]+)?$'
+          AND longitude ~ '^-?[0-9]+(\.[0-9]+)?$'
+      ),
+      counts AS (
+        SELECT house_no, street_name, COUNT(*)::int AS n
+        FROM bbl_permits
+        GROUP BY house_no, street_name
+      ),
+      winner AS (
+        SELECT house_no, street_name
+        FROM counts
+        ORDER BY n DESC, house_no, street_name
+        LIMIT 1
+      )
       SELECT
-        house_no,
-        street_name,
-        borough,
-        latitude,
-        longitude,
-        COUNT(*) OVER ()::int AS total
-      FROM permits
-      WHERE bbl = ${bbl}
-        AND latitude  ~ '^-?[0-9]+(\.[0-9]+)?$'
-        AND longitude ~ '^-?[0-9]+(\.[0-9]+)?$'
+        p.house_no,
+        p.street_name,
+        p.borough,
+        p.latitude,
+        p.longitude,
+        (SELECT COUNT(*)::int FROM bbl_permits) AS total
+      FROM bbl_permits p
+      JOIN winner w
+        ON p.house_no = w.house_no AND p.street_name = w.street_name
       LIMIT 1
     `) as ParcelSummaryRow[];
 
@@ -127,6 +153,12 @@ export default async function handler(req: Request) {
 
   const alias = findVenueAliasByBbl(bbl);
   const venueName = alias ? alias.name : null;
+
+  // Aliased BBLs override the plurality-derived address with the curated
+  // one — keeps Brooklyn Mirage on 140 Stewart, Pacific Park on 104
+  // Carlton, Chinatown jail on 124–125 White, regardless of what DOB has
+  // filed under any single house_no.
+  if (alias) address = alias.displayAddress;
 
   // If the DB row had no coords but the alias entry has approximate ones,
   // use those — Pacific Park and Chinatown jail both have centroid coords

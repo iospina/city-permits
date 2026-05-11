@@ -140,14 +140,36 @@ export default async function handler(
 
   if (isValidBbl) {
     try {
+      // Plurality picker: pick the (house_no, street_name) pair that has
+      // the most permit filings at this BBL. See api/og/[bbl].tsx for the
+      // longer rationale — multi-door BBLs (Brooklyn Mirage, Pacific Park,
+      // Chinatown jail, plus many other NYC parcels) would otherwise
+      // surface a random door's address.
       const rows = (await sql`
+        WITH bbl_permits AS (
+          SELECT house_no, street_name, borough
+          FROM permits
+          WHERE bbl = ${bbl}
+        ),
+        counts AS (
+          SELECT house_no, street_name, COUNT(*)::int AS n
+          FROM bbl_permits
+          GROUP BY house_no, street_name
+        ),
+        winner AS (
+          SELECT house_no, street_name
+          FROM counts
+          ORDER BY n DESC, house_no, street_name
+          LIMIT 1
+        )
         SELECT
-          house_no,
-          street_name,
-          borough,
-          COUNT(*) OVER ()::int AS total
-        FROM permits
-        WHERE bbl = ${bbl}
+          p.house_no,
+          p.street_name,
+          p.borough,
+          (SELECT COUNT(*)::int FROM bbl_permits) AS total
+        FROM bbl_permits p
+        JOIN winner w
+          ON p.house_no = w.house_no AND p.street_name = w.street_name
         LIMIT 1
       `) as ParcelSummaryRow[];
 
