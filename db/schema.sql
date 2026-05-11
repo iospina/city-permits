@@ -68,3 +68,9 @@ CREATE INDEX IF NOT EXISTS idx_permits_geo
   ON permits ((latitude::double precision), (longitude::double precision))
   WHERE latitude  ~ '^-?[0-9]+(\.[0-9]+)?$'
     AND longitude ~ '^-?[0-9]+(\.[0-9]+)?$';
+
+-- Backs the house-number search fallback (/api/search). BTREE supports the
+-- `house_no LIKE 'NN%'` prefix lookups we use when the user's query is
+-- purely numeric — Mapbox's geocoder doesn't autocomplete bare house numbers,
+-- so we fall back to our own index.
+CREATE INDEX IF NOT EXISTS idx_permits_house_no ON permits (house_no);

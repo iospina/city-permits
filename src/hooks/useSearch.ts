@@ -3,17 +3,26 @@
 // Mapbox Geocoding API integration for address search.
 // Returns suggestions as the user types, debounced.
 //
-// Augmented with a tiny hand-curated venue-alias overlay (see
-// services/venueAliases.ts) — Mapbox's geocoder doesn't index venue/
-// business names, so a search for "Brooklyn Mirage" or "Avant Gardner"
-// otherwise misses the actual parcel. When the user's query matches an
-// alias entry, we prepend a synthetic suggestion to the dropdown that
-// resolves directly to the right BBL.
+// Augmented with two non-Mapbox overlays:
+//
+//   1. Hand-curated venue aliases (see services/venueAliases.ts) — Mapbox
+//      doesn't index venue/business names, so "Brooklyn Mirage" / "Pacha
+//      New York" etc. surface synthetic alias suggestions at the top.
+//
+//   2. House-number search fallback (see services/internalSearch.ts) —
+//      Mapbox doesn't autocomplete bare house numbers, so a query like
+//      "75" otherwise returns nothing. When the query is purely numeric
+//      we hit our own /api/search endpoint in parallel with Mapbox and
+//      merge the results.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchSuggestion } from '../types';
 import { findVenueAlias } from '../services/venueAliases';
+import {
+  fetchHouseNumberSuggestions,
+  isHouseNumberQuery,
+} from '../services/internalSearch';
 
 const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 const DEBOUNCE_MS = 300;
@@ -61,31 +70,58 @@ export function useSearch(): UseSearchResult {
           }
         : null;
 
+      // Fire Mapbox and (if applicable) the house-number fallback in
+      // parallel — both go through the same debounce gate already, and we
+      // want the dropdown to populate in one render rather than two.
+      const encoded = encodeURIComponent(query.trim());
+      const mapboxUrl =
+        `${GEOCODING_BASE}/${encoded}.json?access_token=${token}` +
+        `&country=US&bbox=-74.26,40.49,-73.70,40.92&types=address&limit=5`;
+
+      const mapboxPromise = fetch(mapboxUrl)
+        .then(async (res): Promise<SearchSuggestion[]> => {
+          if (!res.ok) return [];
+          const data = await res.json();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (data.features ?? []).map((f: any) => ({
+            id: f.id as string,
+            placeName: f.place_name as string,
+            text: f.text as string,
+            center: f.center as [number, number],
+          }));
+        })
+        .catch(() => [] as SearchSuggestion[]);
+
+      const houseNoPromise = isHouseNumberQuery(query)
+        ? fetchHouseNumberSuggestions(query)
+        : Promise.resolve([] as SearchSuggestion[]);
+
       try {
-        const encoded = encodeURIComponent(query.trim());
-        const url =
-          `${GEOCODING_BASE}/${encoded}.json?access_token=${token}` +
-          `&country=US&bbox=-74.26,40.49,-73.70,40.92&types=address&limit=5`;
+        const [mapboxResults, houseNoResults] = await Promise.all([
+          mapboxPromise,
+          houseNoPromise,
+        ]);
 
-        const res = await fetch(url);
-        const mapboxResults: SearchSuggestion[] = res.ok
-          ? ((await res.json()).features ?? []).map(
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (f: any) => ({
-                id: f.id as string,
-                placeName: f.place_name as string,
-                text: f.text as string,
-                center: f.center as [number, number],
-              }),
-            )
-          : [];
+        // Order: venue alias (most specific intent) → house-number matches
+        // from our DB (handles the bare-number case Mapbox can't) → Mapbox
+        // address autocomplete. Cap at a reasonable visible length so the
+        // dropdown doesn't stretch off-screen.
+        const merged: SearchSuggestion[] = [];
+        if (aliasSuggestion) merged.push(aliasSuggestion);
+        merged.push(...houseNoResults);
+        merged.push(...mapboxResults);
 
-        setSuggestions(
-          aliasSuggestion ? [aliasSuggestion, ...mapboxResults] : mapboxResults,
-        );
-      } catch {
-        // Network failure on Mapbox shouldn't kill the alias suggestion.
-        setSuggestions(aliasSuggestion ? [aliasSuggestion] : []);
+        // Deduplicate by id (e.g., a Mapbox result and a DB result for the
+        // same address shouldn't both appear). DB results come first so
+        // they win the dedupe race when both are present.
+        const seenIds = new Set<string>();
+        const deduped = merged.filter((s) => {
+          if (seenIds.has(s.id)) return false;
+          seenIds.add(s.id);
+          return true;
+        });
+
+        setSuggestions(deduped.slice(0, 8));
       } finally {
         setLoading(false);
       }
