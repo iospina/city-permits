@@ -145,37 +145,43 @@ function ordinalSuffix(n: number): string {
  * the street_name portion of `s`, when that integer is immediately followed
  * by a recognized street-type word.
  *
- * Invariants from the brief:
- *   - House number is never ordinalized. The rule operates on the leading
- *     token of street_name, never on house_no.
+ * Invariants:
+ *   - House number is never ordinalized. The first non-whitespace token in
+ *     the input is treated as house_no (when 3+ tokens are present) and is
+ *     skipped entirely. This protects "1 Avenue A" — house 1 on Avenue A —
+ *     from being mangled into "1st Avenue A".
  *   - Already-ordinalized tokens are skipped (the pure-integer regex
  *     ^\d+$ won't match "23rd", "6TH", etc.).
  *   - Named streets containing numbers ("Route 9A", "Avenue C") are not
  *     ordinalized because either the token isn't a pure integer or the
  *     immediately-following token isn't a street-type word.
  *
- * Position rule (heuristic):
- *   - 3+ tokens: the first non-whitespace token is the house_no; the
- *     leading street_name token is the second. Ordinalize position 1
- *     if it's a pure integer and position 2 is a street-type word.
- *   - exactly 2 tokens: the input is street_name only (no house). The
- *     leading street_name token is the first. Ordinalize position 0 if
- *     it's a pure integer and position 1 is a street-type word.
+ * Position rule:
+ *   - 2 tokens: input is street_name only (no house_no). Candidate is at
+ *     position 0.
+ *   - 3+ tokens: input starts with house_no at position 0; skip it and
+ *     scan positions 1..n-2 for the first integer that is immediately
+ *     followed by a street-type word. This handles directional-prefixed
+ *     numbered streets ("100 West 111 Street" → "100 West 111th Street")
+ *     while still protecting the leading house number.
  *   - <2 tokens: nothing to do.
  *
- * This means a directional-prefixed numbered street like "100 East 6 Street"
- * is NOT ordinalized (position 1 is "East", not the integer). The brief's
- * "first token of street_name" rule is strict on this — directional cases
- * are out of scope for this sprint.
+ * At most one ordinal is applied per call — the first matching integer
+ * wins. The street-type word must be the IMMEDIATE next token, so buried
+ * integers in longer named streets stay untouched.
  *
  * Examples (after Title Case):
- *   "800 6 Avenue"        → "800 6th Avenue"
- *   "100 42 Street"       → "100 42nd Street"
- *   "100 103 Street"      → "100 103rd Street"
- *   "100 111 Street"      → "100 111th Street"  (irregular teens)
- *   "100 East 6 Street"   → unchanged (6 not at leading street_name position)
- *   "100 Stewart Avenue"  → unchanged ("Stewart" not an integer)
- *   "100 23rd Street"     → unchanged ("23rd" not pure integer — no double process)
+ *   "800 6 Avenue"         → "800 6th Avenue"
+ *   "100 42 Street"        → "100 42nd Street"
+ *   "100 103 Street"       → "100 103rd Street"
+ *   "100 111 Street"       → "100 111th Street"   (irregular teens)
+ *   "100 West 111 Street"  → "100 West 111th Street"
+ *   "200 East 42 Street"   → "200 East 42nd Street"
+ *   "1 Avenue A"           → unchanged             (house_no skipped; Avenue
+ *                                                   not preceded by an int
+ *                                                   anywhere downstream)
+ *   "100 Stewart Avenue"   → unchanged             ("Stewart" not an integer)
+ *   "100 23rd Street"      → unchanged             ("23rd" not pure integer)
  */
 export function applyOrdinalSuffix(s: string): string {
   if (!s) return s;
@@ -188,22 +194,24 @@ export function applyOrdinalSuffix(s: string): string {
 
   if (nonWsIdx.length < 2) return s;
 
-  // 2 tokens → street_name only, ordinal candidate at index 0
-  // 3+ tokens → house_no at 0, ordinal candidate at index 1
-  const candPos = nonWsIdx.length === 2 ? 0 : 1;
-  const typePos = candPos + 1;
-  if (typePos >= nonWsIdx.length) return s;
+  // 2 tokens → street_name only, start scanning at position 0.
+  // 3+ tokens → first token is house_no, start scanning at position 1.
+  const startPos = nonWsIdx.length === 2 ? 0 : 1;
 
-  const candidate = parts[nonWsIdx[candPos]];
-  const typeWord = parts[nonWsIdx[typePos]];
+  for (let i = startPos; i < nonWsIdx.length - 1; i++) {
+    const candidate = parts[nonWsIdx[i]];
+    const typeWord = parts[nonWsIdx[i + 1]];
 
-  if (!/^\d+$/.test(candidate)) return s;
-  if (!STREET_TYPE_WORDS.has(typeWord.toLowerCase())) return s;
+    if (!/^\d+$/.test(candidate)) continue;
+    if (!STREET_TYPE_WORDS.has(typeWord.toLowerCase())) continue;
 
-  const n = parseInt(candidate, 10);
-  if (!Number.isFinite(n) || n <= 0) return s;
+    const n = parseInt(candidate, 10);
+    if (!Number.isFinite(n) || n <= 0) continue;
 
-  parts[nonWsIdx[candPos]] = candidate + ordinalSuffix(n);
+    parts[nonWsIdx[i]] = candidate + ordinalSuffix(n);
+    break; // only ordinalize the first matching pair
+  }
+
   return parts.join('');
 }
 
@@ -226,6 +234,8 @@ export function applyOrdinalSuffix(s: string): string {
  *   "100 42 STREET"         → "100 42nd St"
  *   "1 103 STREET"          → "1 103rd St"
  *   "100 11 AVENUE"         → "100 11th Ave"
+ *   "100 WEST 111 STREET"   → "100 West 111th St"
+ *   "200 EAST 42 STREET"    → "200 East 42nd St"
  */
 export function formatStreetAddress(s: string): string {
   return applyStreetSuffixes(applyOrdinalSuffix(toTitleCase(s)));
