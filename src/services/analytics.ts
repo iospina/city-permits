@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import posthog from 'posthog-js';
+import { isInternalDevice } from './internalOptOut';
 
 let initialised = false;
 
@@ -25,6 +26,12 @@ export function initAnalytics(): void {
   }
 
   if (initialised) return;
+
+  // Ignacio's own devices (?internal=1) never load PostHog, so nothing is sent.
+  if (isInternalDevice()) {
+    console.info('[analytics] Internal device — analytics disabled.');
+    return;
+  }
 
   posthog.init(key, {
     api_host: host,
