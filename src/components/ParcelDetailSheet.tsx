@@ -8,8 +8,10 @@
 //   3. "About this Parcel" — collapsed by default
 //
 // Sections expand and collapse independently.
-// Issue 4 fix: Share button uses navigator.share / clipboard fallback.
-// Issue 5 fix: Bookmark is a local toggle per opened parcel.
+// Header: address + close on one row; Save and Share as labelled pills.
+// Share uses navigator.share with a clipboard fallback.
+// Save is a local toggle per parcel. The first save shows a one-time email
+// alerts prompt (fake door for Watch an Address).
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react';
@@ -180,8 +182,52 @@ export default function ParcelDetailSheet({
     });
   };
 
+  // ---- Email alerts prompt (fake door for Watch an Address) ---------------
+  // Shown once per parcel, right after it is saved. "Yes" opens the Building
+  // Reports price page with the address prefilled; "No thanks" dismisses it
+  // for this parcel. Either answer is remembered on this device.
+  const alertsPromptKey = `cp_alerts_prompt_done_${parcel.parcelId}`;
+  const [showAlertsPrompt, setShowAlertsPrompt] = useState(false);
+
+  const alertsPromptDone = () => {
+    try {
+      return localStorage.getItem(alertsPromptKey) === 'true';
+    } catch {
+      return false;
+    }
+  };
+  const markAlertsPromptDone = () => {
+    try {
+      localStorage.setItem(alertsPromptKey, 'true');
+    } catch {
+      // Storage unavailable: the prompt may show again, which is harmless.
+    }
+  };
+
+  const watchUrl = `https://nyc-building-reports.vercel.app/?${new URLSearchParams({
+    address: formatStreetAddress(parcel.displayAddress),
+    src: 'citypermits',
+  }).toString()}`;
+
+  const handleAlertsYes = () => {
+    track(AnalyticsEvents.WATCH_PROMPT_YES, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+    markAlertsPromptDone();
+    setShowAlertsPrompt(false);
+  };
+  const handleAlertsNo = () => {
+    track(AnalyticsEvents.WATCH_PROMPT_DISMISSED, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+    markAlertsPromptDone();
+    setShowAlertsPrompt(false);
+  };
+
   // ---- Item 4: Bookmark toggle — writes to localStorage -------------------
   const handleBookmark = () => {
+    const willSave = !bookmarked;
+    if (willSave && !alertsPromptDone()) {
+      setShowAlertsPrompt(true);
+      track(AnalyticsEvents.WATCH_PROMPT_SHOWN, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+    }
+    if (!willSave) setShowAlertsPrompt(false);
     setBookmarked((prev) => {
       const next = !prev;
       try {
@@ -207,39 +253,20 @@ export default function ParcelDetailSheet({
       <div className="cp-sheet">
         {/* ---- Header ---- */}
         <div className="cp-sheet-header">
-          <div className="cp-sheet-header-actions">
-            {/* Bookmark: filled when saved, outlined when not */}
+          {/* Title row: address on the left, close aligned to the first line
+              (Google Maps pattern). Long addresses wrap under themselves. */}
+          <div className="cp-sheet-title-row">
+            <div className="cp-sheet-title-text">
+              <h2 className="cp-sheet-address">{primaryHeader}</h2>
+              {secondaryAddress && (
+                <p className="cp-sheet-context">{secondaryAddress}</p>
+              )}
+              {contextLine && (
+                <p className="cp-sheet-context">{contextLine}</p>
+              )}
+            </div>
             <button
-              className={`cp-icon-btn${bookmarked ? ' cp-icon-btn--active' : ''}`}
-              aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark this parcel'}
-              title={bookmarked ? 'Remove bookmark' : 'Bookmark'}
-              onClick={handleBookmark}
-            >
-              <span
-                className="material-symbols-outlined"
-                style={{
-                  fontVariationSettings: bookmarked
-                    ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24"
-                    : "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24",
-                }}
-              >
-                bookmark
-              </span>
-            </button>
-
-            {/* Share */}
-            <button
-              className="cp-icon-btn"
-              aria-label="Share this parcel"
-              title="Share"
-              onClick={handleShare}
-            >
-              <span className="material-symbols-outlined">share</span>
-            </button>
-
-            {/* Close */}
-            <button
-              className="cp-icon-btn"
+              className="cp-icon-btn cp-icon-btn--filled"
               aria-label="Close"
               title="Close"
               onClick={handleClose}
@@ -248,12 +275,66 @@ export default function ParcelDetailSheet({
             </button>
           </div>
 
-          <h2 className="cp-sheet-address">{primaryHeader}</h2>
-          {secondaryAddress && (
-            <p className="cp-sheet-context">{secondaryAddress}</p>
-          )}
-          {contextLine && (
-            <p className="cp-sheet-context">{contextLine}</p>
+          {/* Action pills: Save and Share, labelled so they read on their own */}
+          <div className="cp-action-pills">
+            <button
+              className={`cp-pill${bookmarked ? ' cp-pill--active' : ''}`}
+              aria-pressed={bookmarked}
+              onClick={handleBookmark}
+            >
+              <span
+                className="material-symbols-outlined"
+                aria-hidden="true"
+                style={{
+                  fontVariationSettings: bookmarked
+                    ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20"
+                    : "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20",
+                }}
+              >
+                bookmark
+              </span>
+              {bookmarked ? 'Saved' : 'Save'}
+            </button>
+            <button className="cp-pill" onClick={handleShare}>
+              <span className="material-symbols-outlined" aria-hidden="true">
+                share
+              </span>
+              Share
+            </button>
+          </div>
+
+          {/* One-time prompt right after saving: email alerts (fake door) */}
+          {showAlertsPrompt && (
+            <div className="cp-alerts-prompt" role="region" aria-label="Email alerts">
+              <div className="cp-alerts-prompt-body">
+                <span className="material-symbols-outlined cp-alerts-prompt-icon" aria-hidden="true">
+                  mail
+                </span>
+                <div>
+                  <p className="cp-alerts-prompt-title">
+                    Email me when something changes here?
+                  </p>
+                  <p className="cp-alerts-prompt-text">
+                    New violations, permits, or work next door. Email alerts are
+                    coming soon as part of Watch an Address.
+                  </p>
+                </div>
+              </div>
+              <div className="cp-alerts-prompt-actions">
+                <button className="cp-text-btn" onClick={handleAlertsNo}>
+                  No thanks
+                </button>
+                <a
+                  className="cp-filled-btn"
+                  href={watchUrl}
+                  target="_blank"
+                  rel="noopener"
+                  onClick={handleAlertsYes}
+                >
+                  Yes
+                </a>
+              </div>
+            </div>
           )}
         </div>
 

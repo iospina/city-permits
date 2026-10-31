@@ -94,4 +94,14 @@ export const AnalyticsEvents = {
    * parcelId, bbl. Gates the brief's sub-5-second Aha moment claim.
    */
   TIME_TO_PARCEL_DETAIL: 'time_to_parcel_detail',
+
+  /**
+   * Email alerts prompt shown once per parcel right after it is saved.
+   * Fake door for Watch an Address: "Yes" opens the Building Reports price
+   * page (nyc-building-reports.vercel.app) with ?address=…&src=citypermits.
+   * Properties: parcelId, bbl.
+   */
+  WATCH_PROMPT_SHOWN: 'watch_prompt_shown',
+  WATCH_PROMPT_YES: 'watch_prompt_yes',
+  WATCH_PROMPT_DISMISSED: 'watch_prompt_dismissed',
 } as const;
