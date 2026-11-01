@@ -383,6 +383,147 @@ ul {
   color: #202124;
 }
 
+/* ---- Sheet title row, action pills, alerts prompt ------------------------ */
+
+.cp-sheet-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cp-sheet-title-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.cp-icon-btn--filled {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: #f1f3f4;
+  color: #3c4043;
+}
+
+.cp-icon-btn--filled:hover {
+  background: #e8eaed;
+}
+
+.cp-action-pills {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cp-action-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.cp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 16px 8px 12px;
+  border-radius: 999px;
+  background: #e8f0fe;
+  color: #0b57d0;
+  font: 500 15px/1.2 'Roboto', system-ui, sans-serif;
+  white-space: nowrap;
+  transition: background 120ms;
+}
+
+.cp-pill .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.cp-pill:hover {
+  background: #d3e3fd;
+}
+
+.cp-pill:focus-visible,
+.cp-text-btn:focus-visible,
+.cp-filled-btn:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.cp-pill--active {
+  background: #c2e7ff;
+  color: #001d35;
+}
+
+.cp-pill--active:hover {
+  background: #a8dbff;
+}
+
+.cp-alerts-prompt {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f1f6fe;
+  border: 1px solid #d3e3fd;
+}
+
+.cp-alerts-prompt-body {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.cp-alerts-prompt-icon {
+  font-size: 22px;
+  color: #0b57d0;
+}
+
+.cp-alerts-prompt-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.cp-alerts-prompt-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #5f6368;
+  margin-top: 4px;
+}
+
+.cp-alerts-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cp-text-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  color: #0b57d0;
+  font: 500 14px/1.2 'Roboto', system-ui, sans-serif;
+}
+
+.cp-text-btn:hover {
+  background: #e8f0fe;
+}
+
+.cp-filled-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: #0b57d0;
+  color: #fff;
+  font: 500 14px/1.2 'Roboto', system-ui, sans-serif;
+  text-decoration: none;
+}
+
+.cp-filled-btn:hover {
+  background: #0842a0;
+}
+
 .cp-sheet-context {
   font-size: 13px;
   color: #5f6368;
