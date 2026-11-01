@@ -207,7 +207,8 @@ export default function ParcelDetailSheet({
   const watchUrl = `https://nyc-building-reports.vercel.app/?${new URLSearchParams({
     address: formatStreetAddress(parcel.displayAddress),
     src: 'citypermits',
-  }).toString()}`;
+    offer: 'watch',
+  }).toString()}#pricing`;
 
   const handleAlertsYes = () => {
     track(AnalyticsEvents.WATCH_PROMPT_YES, { parcelId: parcel.parcelId, bbl: parcel.bbl });
