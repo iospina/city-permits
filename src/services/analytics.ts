@@ -104,4 +104,14 @@ export const AnalyticsEvents = {
   WATCH_PROMPT_SHOWN: 'watch_prompt_shown',
   WATCH_PROMPT_YES: 'watch_prompt_yes',
   WATCH_PROMPT_DISMISSED: 'watch_prompt_dismissed',
+
+  /**
+   * Research invite shown under a permit card after its first "Expand
+   * Details", at most one ask per visit (the alerts prompt wins). "Tell me"
+   * opens the Tally form 2jBP1j with ?src=citypermits&address=…
+   * Properties: parcelId, bbl.
+   */
+  RESEARCH_INVITE_SHOWN: 'research_invite_shown',
+  RESEARCH_INVITE_CLICKED: 'research_invite_clicked',
+  RESEARCH_INVITE_DISMISSED: 'research_invite_dismissed',
 } as const;

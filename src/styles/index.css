@@ -1049,3 +1049,8 @@ ul {
     bottom: calc(65vh + 8px);
   }
 }
+
+/* Research invite reuses the alerts prompt card; spacing inside the list. */
+.cp-research-invite {
+  margin: 12px 0;
+}

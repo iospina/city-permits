@@ -14,7 +14,7 @@
 // alerts prompt (fake door for Watch an Address).
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { Parcel } from '../types';
 import PermitCard from './PermitCard';
 import EmptyState from './EmptyState';
@@ -23,6 +23,12 @@ import AboutParcelSection from './AboutParcelSection';
 import { track, AnalyticsEvents } from '../services/analytics';
 import { findVenueAliasByBbl } from '../services/venueAliases';
 import { formatStreetAddress, formatBorough } from '../utils/formatters';
+import {
+  RESEARCH_FORM_URL,
+  canShowResearchInvite,
+  markPromptShownThisVisit,
+  markResearchInviteDone,
+} from '../services/promptGate';
 
 /**
  * Where the user came from when this parcel was opened. Drives the
@@ -221,11 +227,42 @@ export default function ParcelDetailSheet({
     setShowAlertsPrompt(false);
   };
 
+  // ---- Research invite (after the first "Expand Details") -----------------
+  // One ask per visit: the alerts prompt wins, and this invite never shows in
+  // the same visit as it. Rendered right under the card that was expanded.
+  const [inviteAfterIndex, setInviteAfterIndex] = useState<number | null>(null);
+  useEffect(() => setInviteAfterIndex(null), [parcel.parcelId]);
+
+  const researchUrl = `${RESEARCH_FORM_URL}?${new URLSearchParams({
+    src: 'citypermits',
+    address: formatStreetAddress(parcel.displayAddress),
+  }).toString()}`;
+
+  const handlePermitExpand = (index: number) => {
+    if (inviteAfterIndex !== null || showAlertsPrompt) return;
+    if (!canShowResearchInvite()) return;
+    markPromptShownThisVisit();
+    setInviteAfterIndex(index);
+    track(AnalyticsEvents.RESEARCH_INVITE_SHOWN, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+  };
+  const handleInviteYes = () => {
+    track(AnalyticsEvents.RESEARCH_INVITE_CLICKED, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+    markResearchInviteDone();
+    setInviteAfterIndex(null);
+  };
+  const handleInviteNo = () => {
+    track(AnalyticsEvents.RESEARCH_INVITE_DISMISSED, { parcelId: parcel.parcelId, bbl: parcel.bbl });
+    markResearchInviteDone();
+    setInviteAfterIndex(null);
+  };
+
   // ---- Item 4: Bookmark toggle — writes to localStorage -------------------
   const handleBookmark = () => {
     const willSave = !bookmarked;
     if (willSave && !alertsPromptDone()) {
       setShowAlertsPrompt(true);
+      setInviteAfterIndex(null);
+      markPromptShownThisVisit();
       track(AnalyticsEvents.WATCH_PROMPT_SHOWN, { parcelId: parcel.parcelId, bbl: parcel.bbl });
     }
     if (!willSave) setShowAlertsPrompt(false);
@@ -362,11 +399,52 @@ export default function ParcelDetailSheet({
               <div className="cp-section-body cp-section-animate">
                 {parcel.activePermits.length > 0 ? (
                   parcel.activePermits.map((p, i) => (
-                    <PermitCard
-                      key={`${p.trackingNumber}-${i}`}
-                      permit={p}
-                      expandable
-                    />
+                    <Fragment key={`${p.trackingNumber}-${i}`}>
+                      <PermitCard
+                        permit={p}
+                        expandable
+                        onExpand={() => handlePermitExpand(i)}
+                      />
+                      {inviteAfterIndex === i && (
+                        <div
+                          className="cp-alerts-prompt cp-research-invite"
+                          role="region"
+                          aria-label="Research invite"
+                        >
+                          <div className="cp-alerts-prompt-body">
+                            <span
+                              className="material-symbols-outlined cp-alerts-prompt-icon"
+                              aria-hidden="true"
+                            >
+                              feedback
+                            </span>
+                            <div>
+                              <p className="cp-alerts-prompt-title">
+                                Use this for work or your neighborhood?
+                              </p>
+                              <p className="cp-alerts-prompt-text">
+                                Tell me how in 15 minutes. I'm building this solo, and
+                                your answer shapes what comes next.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="cp-alerts-prompt-actions">
+                            <button className="cp-text-btn" onClick={handleInviteNo}>
+                              No thanks
+                            </button>
+                            <a
+                              className="cp-filled-btn"
+                              href={researchUrl}
+                              target="_blank"
+                              rel="noopener"
+                              onClick={handleInviteYes}
+                            >
+                              Tell me
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </Fragment>
                   ))
                 ) : (
                   <EmptyState parcelId={parcel.parcelId} />

@@ -18,6 +18,8 @@ interface PermitCardProps {
   permit: Permit;
   /** When true, the card can expand to show detailed metadata. */
   expandable?: boolean;
+  /** Called each time the details are expanded. */
+  onExpand?: () => void;
 }
 
 /**
@@ -81,7 +83,7 @@ function formatCurrency(amount: number): string {
   return `$${amount.toLocaleString()}`;
 }
 
-export default function PermitCard({ permit, expandable = false }: PermitCardProps) {
+export default function PermitCard({ permit, expandable = false, onExpand }: PermitCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const toggleExpand = () => {
@@ -91,6 +93,7 @@ export default function PermitCard({ permit, expandable = false }: PermitCardPro
       track(AnalyticsEvents.PERMIT_DETAILS_EXPANDED, {
         trackingNumber: permit.trackingNumber,
       });
+      onExpand?.();
     }
   };
 
