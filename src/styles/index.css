@@ -1022,6 +1022,19 @@ ul {
   opacity: 0.75;
 }
 
+.cp-attribution-sep {
+  color: #8e8e93;
+}
+
+.cp-attribution-privacy {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cp-attribution-privacy:hover {
+  text-decoration: underline;
+}
+
 /* Mobile-only: lift attribution above the bottom bar (tighter spacing
    than before so the gap between attribution and search bar feels right). */
 @media (max-width: 767px) {
